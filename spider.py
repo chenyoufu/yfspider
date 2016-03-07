@@ -1,4 +1,8 @@
+from multiprocessing.dummy import Pool as ThreadPool
+from multiprocessing import Pool
 import optparse
+import url_redis
+import fetch
 
 
 def parse_options():
@@ -61,4 +65,13 @@ def parse_options():
 
 if __name__ == '__main__':
     options = parse_options()
-    print options
+    #print options
+    ur = url_redis.UrlRedis(host='127.0.0.1', port=6379, db=0)
+    ur.insert(options.yfspider_url)
+    seed = ur.fetch(size=1)
+    urls = fetch.collect_urls(seed[0])
+    print urls
+    #pool = ThreadPool(options.yfspider_threads_num)
+    #pool.map(urllib2.urlopen, urls)
+    #pool.close()
+    #pool.join()
