@@ -1,15 +1,22 @@
 from bs4 import BeautifulSoup
 import functools
 import traceback
+import grequests
 import requests
 import urlparse
+import random
 import url_redis
 import time
 import json
 import re
 
 headers = {
-    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) Chrome/48.0.2564.116 Safari/537.36'
+    'user-agent': 'Mozilla/5.0 (Macintosh) Chrome/48.0.2564.116 Safari/537.36'
+}
+
+proxies = {
+    'http': 'http://127.0.0.1:8080',
+    'https': 'http://127.0.0.1:8080'
 }
 
 
@@ -79,9 +86,9 @@ def get_xsrf_token(page):
 
 def init_login_session():
     login_data = {
-        'password': '********',
+        'password': '******',
         'remember_me': 'true',
-        'email': '********@163.com'
+        'email': 'youfu@163.com'
     }
     s = requests.session()
     s.post('http://www.zhihu.com/login/email', data=login_data)
@@ -102,8 +109,6 @@ def profile(func):
 
 
 class ZhihuUser(object):
-    more_followers_page = 'https://www.zhihu.com/node/ProfileFollowersListV2'
-    more_followees_page = 'https://www.zhihu.com/node/ProfileFolloweesListV2'
     xsrf_token = 'de861dca006eedd1f1bd19e41ab17825'
 
     def __init__(self, homepage, session):
@@ -115,11 +120,15 @@ class ZhihuUser(object):
         self.thanks = 0
         self.nickname = None
         self.avatar = None
+        self.resp_429 = 0
+        self.resp_err = 0
+        self.collect_page = None
         self.hash_id = self.init_hash_id()
         self.followers_page = homepage + '/followers'
         self.followees_page = homepage + '/followees'
-        self.urls = set()
+        self.dup_urls = 0
         self.init_user_info()
+        self.ur = url_redis.UrlRedis()
 
     def init_user_info(self):
         url_token = homepage.split('/')[-1]
@@ -133,78 +142,110 @@ class ZhihuUser(object):
         self.avatar = soup.find('img', class_="Avatar Avatar--l").attrs['src']
 
     @profile
-    def collect_followers(self):
-        r = self.session.get(self.followers_page, timeout=5)
-        self.urls |= self.fetch_a_href(r.text, class_='zg-link')
+    def collect_people(self):
+        self.collect_page = self.followers_page if self.followers >= self.followees else self.followees_page
+        r = self.session.get(self.collect_page, timeout=5)
+        links = self.fetch_a_href(r.text, class_='zg-link')
+        for l in links:
+            if not self.ur.insert(l):
+                self.dup_urls += 1
         self.update_session_cookie()
-        self.urls |= self.more_followers()
+        #self.urls |= self.more_people_async()
+        self.more_people()
+
+    @staticmethod
+    def exception_handler(request, exception):
+        print "Request failed" + str(exception)
+
+    def dump_more_people(self, r):
+        if r.status_code == 200:
+            page = ''.join(r.json()['msg'])
+            links = self.fetch_a_href(page, class_='zg-link')
+            for l in links:
+                if not ur.insert(l):
+                    self.dup_urls += 1
+        elif r.status_code == 429:
+            self.resp_429 += 1
+        else:
+            self.resp_err += 1
+
+    def more_people_async(self):
+        if self.hash_id:
+            params = {'order_by': 'created', 'hash_id': self.hash_id}
+            payload = {'_xsrf': self.xsrf_token, 'method': 'next'}
+            size = self.followers if self.followers >= self.followees else self.followees
+            url = "https://www.zhihu.com/node/ProfileFollowe{0}sListV2"
+            url = url.format('r') if self.followers >= self.followees else url.format('e')
+            reqs = []
+            for offset in xrange(20, size, 20):
+                params['offset'] = offset
+                payload['params'] = json.dumps(params)
+                reqs.append(grequests.post(url, data=payload.copy(), session=self.session))
+            resps = grequests.map(reqs, size=8, exception_handler=self.exception_handler)
+            for resp in resps:
+                self.dump_more_people(resp)
 
     @profile
-    def collect_followees(self):
-        r = self.session.get(self.followees_page, timeout=5)
-        self.urls |= self.fetch_a_href(r.text, class_='zg-link')
-        self.update_session_cookie()
-        self.urls |= self.more_followees()
-
-    def more_followers(self):
-        links = set()
-        params = {'order_by': 'created', 'hash_id': self.hash_id}
-        payload = {'_xsrf': self.xsrf_token, 'method': 'next'}
-        for offset in xrange(20, self.followers, 20):
-            params['offset'] = offset
-            payload['params'] = json.dumps(params)
-            r = self.session.post(self.more_followers_page, data=payload)
-            page = ''.join(r.json()['msg'])
-            links |= self.fetch_a_href(page, class_='zg-link')
-        return links
-
-    def more_followees(self):
-        links = set()
-        params = {'order_by': 'created', 'hash_id': self.hash_id}
-        payload = {'_xsrf': self.xsrf_token, 'method': 'next'}
-        for offset in xrange(20, self.followees, 20):
-            params['offset'] = offset
-            payload['params'] = json.dumps(params)
-            r = self.session.post(self.more_followees_page, data=payload)
-            page = ''.join(r.json()['msg'])
-            links |= self.fetch_a_href(page, class_='zg-link')
-        return links
+    def more_people(self):
+        if self.hash_id:
+            params = {'order_by': 'created', 'hash_id': self.hash_id}
+            payload = {'_xsrf': self.xsrf_token, 'method': 'next'}
+            size = self.followers if self.followers >= self.followees else self.followees
+            url = "https://www.zhihu.com/node/ProfileFollowe{0}sListV2"
+            url = url.format('r') if self.followers >= self.followees else url.format('e')
+            for offset in xrange(20, size, 20):
+                params['offset'] = offset
+                payload['params'] = json.dumps(params)
+                try:
+                    t1 = time.time()
+                    r = self.session.post(url, data=payload, timeout=10)
+                    t2 = time.time()
+                    print t2 - t1
+                    self.dump_more_people(r)
+                except requests.exceptions.ReadTimeout as e:
+                    print 'Request {0} {1} timeout'.format(url, offset)
+                    continue
 
     def update_session_cookie(self):
         self.session.cookies.pop('_xsrf')
-        self.session.cookies.set('_xsrf', 'de861dca006eedd1f1bd19e41ab17825')
+        self.session.cookies.set('_xsrf', self.xsrf_token)
 
     @staticmethod
     def fetch_a_href(page, **kwargs):
-        links = set()
         soup = BeautifulSoup(page, 'lxml')
-        for link in soup.find_all('a', **kwargs):
-            url = link.get('href')
-            url and links.add(url)
+        links = map(lambda a: a.get('href'), soup.find_all('a', **kwargs))
         return links
 
     def init_hash_id(self):
         r = self.session.get(self.homepage+'/followers')
         soup = BeautifulSoup(r.text, 'lxml')
-        data_init = soup.find('div', attrs={'data-init': True}).attrs['data-init']
-        return json.loads(data_init)['params']['hash_id']
+        try:
+            data_init = soup.find('div', attrs={'data-init': True}).attrs['data-init']
+            return json.loads(data_init)['params']['hash_id']
+        except AttributeError as e:
+            print str(e)
+            print r.text
+            return
 
 
 if __name__ == '__main__':
-    ur = url_redis.UrlRedis(host='127.0.0.1', port=6379, db=0)
+    ur = url_redis.UrlRedis()
     s = init_login_session()
-    urls = set()
+    #s.proxies = proxies
+    s.headers.update(headers)
     homepage = 'https://www.zhihu.com/people/chen-you-fu-27'
     ur.insert(homepage)
-
-    homepage = ur.fetch(size=1)[0]
-    zhihu_user = ZhihuUser(homepage, s)
-    print zhihu_user.__dict__
-    if zhihu_user.followers >= zhihu_user.followees:
-        zhihu_user.collect_followers()
-    else:
-        zhihu_user.collect_followees()
-    print len(zhihu_user.urls)
-    for u in zhihu_user.urls:
-        ur.insert(u)
+    while True:
+        dup_urls = 0
+        #homepage = ur.fetch(size=1)[0]
+        homepage = ur.dummy_fetch()[0][0]
+        print homepage
+        zhihu_user = ZhihuUser(homepage, s)
+        print 'followers: ', zhihu_user.__dict__['followers']
+        print 'followees: ', zhihu_user.__dict__['followees']
+        zhihu_user.collect_people()
+        print 'resp_429: ', zhihu_user.resp_429
+        print 'resp_err: ', zhihu_user.resp_err
+        print 'redis set dup urls: ', zhihu_user.dup_urls
+        break
 
