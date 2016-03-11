@@ -1,10 +1,11 @@
 from bs4 import BeautifulSoup
+from multiprocessing import Pool
 import functools
 import traceback
 import grequests
 import requests
 import urlparse
-import random
+import psutil
 import url_redis
 import time
 import json
@@ -86,9 +87,9 @@ def get_xsrf_token(page):
 
 def init_login_session():
     login_data = {
-        'password': '******',
+        'password': '*',
         'remember_me': 'true',
-        'email': 'youfu@163.com'
+        'email': 'youfu.ok@163.com'
     }
     s = requests.session()
     s.post('http://www.zhihu.com/login/email', data=login_data)
@@ -150,7 +151,7 @@ class ZhihuUser(object):
             if not self.ur.insert(l):
                 self.dup_urls += 1
         self.update_session_cookie()
-        #self.urls |= self.more_people_async()
+        #self.more_people_async2()
         self.more_people()
 
     @staticmethod
@@ -185,17 +186,32 @@ class ZhihuUser(object):
             for resp in resps:
                 self.dump_more_people(resp)
 
-    @profile
-    def more_people(self):
+    def more_people_async2(self):
+        resps = grequests.map(self.more_people_async_g(), size=8, exception_handler=self.exception_handler)
+        for resp in resps:
+            self.dump_more_people(resp)
+
+    def more_people_async_g(self):
+        url = "https://www.zhihu.com/node/ProfileFollowe{0}sListV2"
+        url = url.format('r') if self.followers >= self.followees else url.format('e')
+        for payload in self.more_people_payloads():
+            yield grequests.post(url, data=payload.copy(), session=self.session)
+
+    def more_people_payloads(self):
         if self.hash_id:
             params = {'order_by': 'created', 'hash_id': self.hash_id}
             payload = {'_xsrf': self.xsrf_token, 'method': 'next'}
             size = self.followers if self.followers >= self.followees else self.followees
-            url = "https://www.zhihu.com/node/ProfileFollowe{0}sListV2"
-            url = url.format('r') if self.followers >= self.followees else url.format('e')
             for offset in xrange(20, size, 20):
                 params['offset'] = offset
                 payload['params'] = json.dumps(params)
+                yield payload
+
+    @profile
+    def more_people(self):
+            url = "https://www.zhihu.com/node/ProfileFollowe{0}sListV2"
+            url = url.format('r') if self.followers >= self.followees else url.format('e')
+            for payload in self.more_people_payloads():
                 try:
                     t1 = time.time()
                     r = self.session.post(url, data=payload, timeout=10)
@@ -203,7 +219,7 @@ class ZhihuUser(object):
                     print t2 - t1
                     self.dump_more_people(r)
                 except requests.exceptions.ReadTimeout as e:
-                    print 'Request {0} {1} timeout'.format(url, offset)
+                    print 'Request {0} {1} timeout'.format(url, payload)
                     continue
 
     def update_session_cookie(self):
@@ -228,17 +244,11 @@ class ZhihuUser(object):
             return
 
 
-if __name__ == '__main__':
-    ur = url_redis.UrlRedis()
-    s = init_login_session()
-    #s.proxies = proxies
-    s.headers.update(headers)
-    homepage = 'https://www.zhihu.com/people/chen-you-fu-27'
-    ur.insert(homepage)
+def task(name):
     while True:
         dup_urls = 0
-        #homepage = ur.fetch(size=1)[0]
-        homepage = ur.dummy_fetch()[0][0]
+        homepage = ur.fetch(size=1)[0]
+        #homepage = ur.dummy_fetch()[0][0]
         print homepage
         zhihu_user = ZhihuUser(homepage, s)
         print 'followers: ', zhihu_user.__dict__['followers']
@@ -247,5 +257,22 @@ if __name__ == '__main__':
         print 'resp_429: ', zhihu_user.resp_429
         print 'resp_err: ', zhihu_user.resp_err
         print 'redis set dup urls: ', zhihu_user.dup_urls
-        break
+
+
+
+if __name__ == '__main__':
+    ur = url_redis.UrlRedis()
+    s = init_login_session()
+    #s.proxies = proxies
+    s.headers.update(headers)
+    homepage = 'https://www.zhihu.com/people/chen-you-fu-27'
+    ur.insert(homepage)
+    p = Pool()
+    for i in range(psutil.cpu_count()):
+        p.apply_async(task, args=('sipder{0}'.format(i),))
+    print 'Waiting for all subprocesses done...'
+    p.close()
+    p.join()
+    print 'All subprocesses done.'
+
 
