@@ -259,7 +259,6 @@ def task(name):
         print 'redis set dup urls: ', zhihu_user.dup_urls
 
 
-
 if __name__ == '__main__':
     ur = url_redis.UrlRedis()
     s = init_login_session()
