@@ -26,6 +26,7 @@ def parse_token(html):
     return token
 
 
+@profile
 def login_session(user, password):
     us = requests.session()
     r = us.get("https://github.com/login")
@@ -50,11 +51,12 @@ def get_context(form):
     return action, token
 
 
-def get_followers_pages(username):
+@profile
+def get_pages(username, tab="followers"):
     url = "https://github.com/{0}".format(username)
     r = requests.get(url)
     soup = BeautifulSoup(r.text)
-    href = "/{0}?tab=followers".format(username)
+    href = "/{0}?tab={1}".format(username, tab)
     tmp = soup.find("a", attrs={"href": href}).find("span").text.strip()
     c = 0
     if tmp[-1] == 'k':
@@ -68,8 +70,29 @@ def get_followers_pages(username):
     return pages
 
 
+@profile
+def get_pages_api(username, tab):
+    url = "https://api.github.com/users/{0}".format(username)
+    r = requests.get(url)
+    if r.status_code == 403:
+        return get_pages(username, tab)
+    c = r.json()[tab]
+    page_size = 51
+    pages = c / page_size
+    if c % page_size != 0:
+        pages += 1
+    return pages
+
+
+@profile
+def get_user_api(username):
+    url = "https://api.github.com/users/{0}".format(username)
+    r = requests.get(url)
+    return r.json()
+
+
 def fucking(request_session, start_user, action):
-    page_num = get_followers_pages(start_user)
+    page_num = get_pages_api(start_user, "followers")
     for i in range(1, page_num):
         url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, i)
         r = request_session.get(url)
@@ -92,7 +115,7 @@ def follow(request_session, action, token):
 
 def check_args():
     if len(sys.argv) < 4:
-        print "github_follow.py <user> <pw> <follow|unfollow>"
+        print "github_follow.py <login> <pw> <follow|unfollow> <seed>"
         sys.exit(0)
     if sys.argv[3] not in ["follow", "unfollow"]:
         print "The third param must be 'follow' or 'unfollow'"
@@ -102,4 +125,4 @@ def check_args():
 if __name__ == '__main__':
     check_args()
     s = login_session(sys.argv[1], sys.argv[2])
-    fucking(s, "kennethreitz", sys.argv[3])
+    fucking(s, sys.argv[4], sys.argv[3])
