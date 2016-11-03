@@ -52,7 +52,7 @@ def get_context(form):
 
 
 @profile
-def get_pages(username, tab="followers"):
+def get_pages(username, tab):
     url = "https://github.com/{0}".format(username)
     r = requests.get(url)
     soup = BeautifulSoup(r.text)
@@ -91,20 +91,38 @@ def get_user_api(username):
     return r.json()
 
 
-def fucking(request_session, start_user, action):
-    page_num = get_pages_api(start_user, "followers")
-    for i in range(1, page_num):
-        url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, i)
-        r = request_session.get(url)
-        soup = BeautifulSoup(r.text)
-        forms = soup.find_all("form", attrs={"data-remote": "true"})
-        print "{0} page {1} forms count: {2}".format(start_user, i, len(forms))
-        ctx = map(lambda x: get_context(x.encode()), forms)
+def page_fans_ctx(rs, user, page, tab):
+    url = "https://github.com/{0}?page={1}&tab={2}".format(user, page, tab)
+    r = rs.get(url)
+    soup = BeautifulSoup(r.text)
+    forms = soup.find_all("form", attrs={"data-remote": "true"})
+    print "{0} page {1} forms count: {2}".format(user, page, len(forms))
+    ctx = map(lambda x: get_context(x.encode()), forms)
+    return ctx
+
+
+def w_fans(request_session):
+    tab = "followers"
+    seed = sys.argv[1]
+    page_num = get_pages_api(seed, tab)
+    l = []
+    for i in range(1, page_num + 1):
+        ctx = page_fans_ctx(request_session, seed, i, tab)
+        l.extend([cx[0] for cx in ctx])
+    return l
+
+
+def foo(request_session, seed, action):
+    tab = action == "follow" and "followers" or "following"
+    wfs = w_fans(request_session)
+    page_num = get_pages_api(seed, tab)
+    for i in range(1, page_num+1):
+        ctx = page_fans_ctx(request_session, seed, i, tab)
         for cx in ctx:
-            cx[0].startswith("/users/" + action) and follow(s, cx[0], cx[1])
+            cx[0] not in wfs and cx[0].startswith("/users/" + action) and bar(s, cx[0], cx[1])
 
 
-def follow(request_session, action, token):
+def bar(request_session, action, token):
     url = "https://github.com/{0}".format(action)
     follow_data = {
         "authenticity_token": token
@@ -125,4 +143,4 @@ def check_args():
 if __name__ == '__main__':
     check_args()
     s = login_session(sys.argv[1], sys.argv[2])
-    fucking(s, sys.argv[4], sys.argv[3])
+    foo(s, sys.argv[4], sys.argv[3])
