@@ -6,6 +6,9 @@ import requests
 import time
 import sys
 
+followed_list = []
+followers_list = []
+
 
 def profile(func):
     @functools.wraps(func)
@@ -15,8 +18,9 @@ def profile(func):
         ret = func(*args, **kwargs)
         t2 = time.time()
         print("function      = {0}".format(func.__name__))
-        print("    time      = %.6f sec" % (t2-t1))
+        print("    time      = %.6f sec" % (t2 - t1))
         return ret
+
     return wrapper
 
 
@@ -93,18 +97,56 @@ def get_user_api(username):
 
 def fucking(request_session, start_user, action):
     page_num = get_pages_api(start_user, "followers")
-    for i in range(1, page_num):
-        url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, i)
+    for page_no in range(1, page_num + 1):
+        url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
+        if action != "follow":
+            url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
+            r = request_session.get(url)
+            ctx = spider_ctx(r.text, start_user, page_no)
+            for cx in ctx:
+                cx[0].startswith("/users/" + action) and save_followers(cx[0])
+            url = "https://github.com/{0}?page={1}&tab=following".format(start_user, page_no)
+
         r = request_session.get(url)
-        soup = BeautifulSoup(r.text)
-        forms = soup.find_all("form", attrs={"data-remote": "true"})
-        print "{0} page {1} forms count: {2}".format(start_user, i, len(forms))
-        ctx = map(lambda x: get_context(x.encode()), forms)
-        for cx in ctx:
-            cx[0].startswith("/users/" + action) and follow(s, cx[0], cx[1])
+        ctx = spider_ctx(r.text, start_user, page_no)
+        if action == "follow":
+            for cx in ctx:
+                cx[0].startswith("/users/" + action) and follow(s, cx[0], cx[1])
+        else:
+            for cx in ctx:
+                cx[0].startswith("/users/" + action) and un_follow(s, cx[0], cx[1])
+
+
+def spider_ctx(text, start_user, page_no):
+    soup = BeautifulSoup(text)
+    forms = soup.find_all("form", attrs={"data-remote": "true"})
+    print "{0} page {1} forms count: {2}".format(start_user, page_no, len(forms))
+    ctx = map(lambda x: get_context(x.encode()), forms)
+    return ctx
+
+
+def save_followers(action):
+    name = action.split("=")[1]
+    followers_list.append(name)
 
 
 def follow(request_session, action, token):
+    name = action.split("=")[1]
+    if name in followed_list:
+        return
+    url = "https://github.com/{0}".format(action)
+    follow_data = {
+        "authenticity_token": token
+    }
+    r = request_session.post(url, data=follow_data)
+    followed_list.append(name)
+    print action, r.status_code
+
+
+def un_follow(request_session, action, token):
+    name = action.split("=")[1]
+    if name in followers_list:
+        return
     url = "https://github.com/{0}".format(action)
     follow_data = {
         "authenticity_token": token
