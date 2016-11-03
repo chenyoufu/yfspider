@@ -124,7 +124,7 @@ def fucking(request_session, start_user, action):
 def spider_ctx(text, start_user, page_no):
     soup = BeautifulSoup(text)
     forms = soup.find_all("form", attrs={"data-remote": "true"})
-    print "{0} page {1} forms count: {2}".format(start_user, page_no, len(forms))
+    print "{0} page {1} forms count: {2}".format(start_user, page_no, len(forms)/2)
     ctx = map(lambda x: get_context(x.encode()), forms)
     return ctx
 
