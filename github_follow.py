@@ -104,6 +104,7 @@ def fucking(request_session, start_user, action):
             ctx = spider_ctx(r.text, start_user, page_no)
             for cx in ctx:
                 cx[0].startswith("/users/" + action) and save_followers(cx[0])
+    print followers_list
 
     if action == "follow":
         page_num = followers_page_num
