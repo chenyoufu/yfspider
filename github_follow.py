@@ -96,15 +96,20 @@ def get_user_api(username):
 
 
 def fucking(request_session, start_user, action):
-    page_num = get_pages_api(start_user, "followers")
-
-    for page_no in range(1, page_num + 1):
+    followers_page_num = get_pages_api(start_user, "followers")
+    for page_no in range(1, followers_page_num + 1):
         if action != "follow":
             url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
             r = request_session.get(url)
             ctx = spider_ctx(r.text, start_user, page_no)
             for cx in ctx:
                 cx[0].startswith("/users/" + action) and save_followers(cx[0])
+
+    if action == "follow":
+        page_num = followers_page_num
+    else:
+        following_page_num = get_pages_api(start_user, "following")
+        page_num = following_page_num
 
     for page_no in range(1, page_num + 1):
         url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
@@ -124,7 +129,7 @@ def fucking(request_session, start_user, action):
 def spider_ctx(text, start_user, page_no):
     soup = BeautifulSoup(text)
     forms = soup.find_all("form", attrs={"data-remote": "true"})
-    print "{0} page {1} forms count: {2}".format(start_user, page_no, len(forms)/2)
+    print "{0} page {1} forms count: {2}".format(start_user, page_no, len(forms) / 2)
     ctx = map(lambda x: get_context(x.encode()), forms)
     return ctx
 
