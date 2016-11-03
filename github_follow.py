@@ -97,14 +97,18 @@ def get_user_api(username):
 
 def fucking(request_session, start_user, action):
     page_num = get_pages_api(start_user, "followers")
+
     for page_no in range(1, page_num + 1):
-        url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
         if action != "follow":
             url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
             r = request_session.get(url)
             ctx = spider_ctx(r.text, start_user, page_no)
             for cx in ctx:
                 cx[0].startswith("/users/" + action) and save_followers(cx[0])
+
+    for page_no in range(1, page_num + 1):
+        url = "https://github.com/{0}?page={1}&tab=followers".format(start_user, page_no)
+        if action != "follow":
             url = "https://github.com/{0}?page={1}&tab=following".format(start_user, page_no)
 
         r = request_session.get(url)
