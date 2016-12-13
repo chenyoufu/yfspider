@@ -96,7 +96,7 @@ def page_fans_ctx(rs, user, page, tab):
     r = rs.get(url)
     soup = BeautifulSoup(r.text)
     forms = soup.find_all("form", attrs={"data-remote": "true"})
-    print "{0} page {1} forms count: {2}".format(user, page, len(forms))
+    print "{0} page {1} forms count: {2}".format(user, page, len(forms)/2)
     ctx = map(lambda x: get_context(x.encode()), forms)
     return ctx
 
