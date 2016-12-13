@@ -15,10 +15,7 @@ d = path.dirname(__file__)
 with open('haizi.txt', 'r') as poet:
     s = poet.read()
 
-seg_list = [x for x in jieba.cut(s) if len(x) > 1]
-
-stopwords = set(STOPWORDS)
-
+seg_list = [x for x in jieba.cut(s) if len(x) > 1 and x not in [u'一个', u'一只', u'一样', u'一直', u'一种']]
 
 alice_coloring = np.array(Image.open(path.join(d, "haizi.jpg")))
 
