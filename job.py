@@ -81,53 +81,6 @@ headers = {
 }
 
 
-def is_static_resource(url):
-    if re.match('.(jpg|png|bmp|mp3|wma|wmv|gz|pdf|js|css|zip|rar|iso|pdf|txt|db)$', url):
-        return True
-    return False
-
-
-def is_relative_path(url):
-    if url.startswith('/'):
-        return True
-    return False
-
-
-def complemented_url(seed, path):
-    parts = urlparse.urlsplit(seed)
-    url = '{0}://{1}{2}'.format(parts.scheme, parts.netloc, path)
-    return url
-
-
-def is_js_path(url):
-    if url.startswith('javascript') or url.startswith('#'):
-        return True
-    return False
-
-
-def ip2int(ip):
-    o = map(int, ip.split('.'))
-    return (o[0] << 24) + (o[1] << 16) + (o[2] << 8) + o[3]
-
-
-def timestamp():
-    return str(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-
-
-def profile(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        t1 = time.time()
-        # call the method
-        ret = func(*args, **kwargs)
-        t2 = time.time()
-        print("function      = {0}".format(func.__name__))
-        print("    time      = %.6f sec" % (t2 - t1))
-        return ret
-
-    return wrapper
-
-
 class Job(dict):
     def __init__(self, ctx=None):
         self.ctx = ctx
@@ -243,7 +196,7 @@ def parse_jobs(company_id):
             r.encoding = r.apparent_encoding
     try:
         jobs = json.loads(r.text)['content']['data']['page']['result']
-        return [Job(j) for j in jobs if j['city'] == u'无锡' and j['position_id'] not in pids]
+        return [Job(j) for j in jobs if j['city'] == u'无锡' and j['positionId'] not in pids]
     except ValueError:
         print r.text
 
