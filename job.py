@@ -9,6 +9,7 @@ import urlparse
 import json
 import pymysql
 import maya
+import random
 
 
 def random_ip():
@@ -22,6 +23,18 @@ def random_ip():
 db = pymysql.connect(host='120.27.201.184', user='root', password='bestoffer', db='bestoffer', charset='utf8mb4')
 
 
+def exist_jobs(table):
+    try:
+        with db.cursor() as cursor:
+            sql = 'select position_id from %s' % table
+            cursor.execute(sql)
+            cols = cursor.fetchall()
+            db.commit()
+        return [x[0] for x in cols]
+    finally:
+        db.close()
+
+
 def dump2mysql(table, job):
     try:
         with db.cursor() as cursor:
@@ -32,6 +45,7 @@ def dump2mysql(table, job):
                 'work_year': 'work_year',
                 'salary_min': 'salary_min',
                 'salary_max': 'salary_max',
+                'salary_avg': 'salary_avg',
                 'salary': 'salary',
                 'create_time': 'create_time',
                 'company_id': 'company_id',
@@ -59,10 +73,8 @@ def dump2mysql(table, job):
 
 
 headers = {
-    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36',
     'Connection': 'keep-alive',
-    'X-Forwarded-For': random_ip(),
-    'Client-IP': random_ip(),
     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
     # 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Cookie': 'user_trace_token=20161216232858-d55af3950207433d8f7aa363ac9a76ff; LGUID=20161216232858-5d12c08d-c3a4-11e6-b15f-525400f775ce; index_location_city=%E4%B8%8A%E6%B5%B7; JSESSIONID=85628EFE21CD9ECA73F06627C0BCFF63; PRE_UTM=; PRE_HOST=; PRE_SITE=; PRE_LAND=https%3A%2F%2Fwww.lagou.com%2F; TG-TRACK-CODE=index_search; SEARCH_ID=01bfa35b8a9b447ba4affa7d18cfaf2a; Hm_lvt_4233e74dff0ae5bd0a3d81c6ccf756e6=1486541112,1486998011; Hm_lpvt_4233e74dff0ae5bd0a3d81c6ccf756e6=1487817009; _ga=GA1.2.1703120497.1481902153; LGSID=20170223100713-ca95759c-f96c-11e6-8822-525400f775ce; LGRID=20170223103009-ff10c6ca-f96f-11e6-8829-525400f775ce'
@@ -135,7 +147,7 @@ class Job(dict):
         self.source = 'lagou'
 
     def parse_company_size(self):
-        l = re.findall('\d+', self.salary)
+        l = [int(x) for x in re.findall('\d+', self.ctx['companySize'])]
         if len(l) == 0:
             return 0
         return reduce(lambda x, y: x + y, l) / len(l)
@@ -144,6 +156,7 @@ class Job(dict):
         salaries = re.findall('\d+', self.salary)
         self.salary_min = salaries[0]
         self.salary_max = salaries[1]
+        self.salary_avg = (self.salary_min + self.salary_max)/2
 
     def parse_work_year(self):
         years = re.findall('\d+', self.work_year)
@@ -212,23 +225,37 @@ class Job(dict):
 #     return companies
 
 
+def random_proxy():
+    with open('proxies.txt', 'r') as f:
+        return random.choice([line.strip() for line in f])
+
+
 def parse_jobs(company_id):
     url = 'https://www.lagou.com/gongsi/searchPosition.json'
     payload = 'companyId={0}&positionFirstType=%E6%8A%80%E6%9C%AF&pageNo=1&pageSize=20'.format(company_id)
-    r = requests.post(url, headers=headers, data=payload)
+    proxies = {
+        'https': random_proxy()
+    }
+    r = requests.post(url, headers=headers, data=payload, proxies=proxies)
     if r.encoding == 'ISO-8859-1':
         encodings = requests.utils.get_encodings_from_content(r.content)
         if encodings:
             r.encoding = encodings[0]
         else:
             r.encoding = r.apparent_encoding
-    jobs = json.loads(r.text)['content']['data']['page']['result']
-    return [Job(j) for j in jobs if j['city'] == u'无锡']
+    try:
+        jobs = json.loads(r.text)['content']['data']['page']['result']
+        return [Job(j) for j in jobs if j['city'] == u'无锡' and j['position_id'] not in pids]
+    except ValueError:
+        print r.text
 
 
 def parse_companies(url, pn):
     payload = 'first=false&pn={0}&sortField=0&havemark=0'.format(pn)
-    r = requests.post(url, headers=headers, data=payload)
+    proxies = {
+        'https': random_proxy()
+    }
+    r = requests.post(url, headers=headers, data=payload, proxies=proxies)
     if r.encoding == 'ISO-8859-1':
         encodings = requests.utils.get_encodings_from_content(r.content)
         if encodings:
@@ -240,14 +267,20 @@ def parse_companies(url, pn):
 
 
 if __name__ == '__main__':
+    pids = exist_jobs('t_job')
+    # time.sleep(3600)
     seed = 'https://www.lagou.com/gongsi/84-0-0.json'
     page_no = 1
     payload = 'first=false&pn={0}&sortField=0&havemark=0'.format(page_no)
+    proxies = {
+        'https': random_proxy()
+    }
     r = requests.post(seed, headers=headers, data=payload)
+
     page_size = json.loads(r.text)['pageSize']
     total_count = int(json.loads(r.text)['totalCount'])
     for pn in range(1, total_count/page_size+2):
-        time.sleep(0.1)
+        time.sleep(random.randint(20, 60))
         for c in parse_companies(seed, pn):
             for job in parse_jobs(c['companyId']):
                 dump2mysql('t_job', job)
