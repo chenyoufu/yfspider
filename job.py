@@ -225,9 +225,9 @@ class Job(dict):
 #     return companies
 
 
-def random_proxy():
-    with open('proxies.txt', 'r') as f:
-        return random.choice([line.strip() for line in f])
+# def random_proxy():
+#     with open('proxies.txt', 'r') as f:
+#         return random.choice([line.strip() for line in f])
 
 
 def parse_jobs(company_id):
@@ -272,9 +272,9 @@ if __name__ == '__main__':
     seed = 'https://www.lagou.com/gongsi/84-0-0.json'
     page_no = 1
     payload = 'first=false&pn={0}&sortField=0&havemark=0'.format(page_no)
-    proxies = {
-        'https': random_proxy()
-    }
+    # proxies = {
+    #     'https': random_proxy()
+    # }
     r = requests.post(seed, headers=headers, data=payload)
 
     page_size = json.loads(r.text)['pageSize']
