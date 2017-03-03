@@ -233,10 +233,8 @@ class Job(dict):
 def parse_jobs(company_id):
     url = 'https://www.lagou.com/gongsi/searchPosition.json'
     payload = 'companyId={0}&positionFirstType=%E6%8A%80%E6%9C%AF&pageNo=1&pageSize=20'.format(company_id)
-    proxies = {
-        'https': random_proxy()
-    }
-    r = requests.post(url, headers=headers, data=payload, proxies=proxies)
+
+    r = requests.post(url, headers=headers, data=payload)
     if r.encoding == 'ISO-8859-1':
         encodings = requests.utils.get_encodings_from_content(r.content)
         if encodings:
@@ -252,10 +250,8 @@ def parse_jobs(company_id):
 
 def parse_companies(url, pn):
     payload = 'first=false&pn={0}&sortField=0&havemark=0'.format(pn)
-    proxies = {
-        'https': random_proxy()
-    }
-    r = requests.post(url, headers=headers, data=payload, proxies=proxies)
+
+    r = requests.post(url, headers=headers, data=payload)
     if r.encoding == 'ISO-8859-1':
         encodings = requests.utils.get_encodings_from_content(r.content)
         if encodings:
@@ -272,9 +268,7 @@ if __name__ == '__main__':
     seed = 'https://www.lagou.com/gongsi/84-0-0.json'
     page_no = 1
     payload = 'first=false&pn={0}&sortField=0&havemark=0'.format(page_no)
-    # proxies = {
-    #     'https': random_proxy()
-    # }
+
     r = requests.post(seed, headers=headers, data=payload)
 
     page_size = json.loads(r.text)['pageSize']
